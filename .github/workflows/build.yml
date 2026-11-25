@@ -1,35 +1,41 @@
----
 name: build
 
 on: [push]
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: build (${{ matrix.version }})
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 4
+      fail-fast: false
       matrix:
-        python-version: [2.7, 3.5, 3.6, 3.7]
+        include:
+          - version: '2.7'
+            image: python:2.7.18-slim-buster@sha256:b68d40df862ac07e8955ea0fc0c5454cb4245b6165e79bc8ea2cc69170d9ba62
+          - version: '3.5'
+            image: python:3.5.10-slim-buster@sha256:22732e5e3b27336e36aa3156789a7a730af4fa79599b09693dd9b520c9ee02db
+          - version: '3.6'
+            image: python:3.6.15-slim-buster@sha256:d59ee182c4629dd33b240b9bac1a6ff44276e79e66117eba17aed4016845d3b2
+          - version: '3.7'
+            image: python:3.7.17-slim-bullseye@sha256:ea8897698c0955ba96144bd2b7310ef7884ccce4db7a1f97ffc21fb8b89d1673
 
     steps:
-      - uses: actions/checkout@v1
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          python-version: ${{ matrix.python-version }}
+          persist-credentials: false
 
-      - name: Install dependencies
+      # These retired interpreters are no longer installed on GitHub's runners.
+      - name: Test with the official Python image
+        env:
+          IMAGE: ${{ matrix.image }}
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Lint with flake8
-        run: |
-          pip install flake8
-          flake8 . --count --max-line-length=127 --statistics
-
-      - name: Test with pytest
-        run: |
-          pip install pytest
-          python -m pytest --verbose
+          docker run --rm --volume "$GITHUB_WORKSPACE:/src:ro" --workdir /src \
+            --env PYTHONDONTWRITEBYTECODE=1 "$IMAGE" sh -ec '
+              python -m pip install --upgrade pip
+              python -m pip install -r requirements.txt flake8 pytest
+              python -m flake8 . --count --max-line-length=127 --statistics
+              python -m pytest --verbose -p no:cacheprovider
+            '
